@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { checkVisaWithOpenAI } from "@/lib/openai";
+import { improveVisaSoraniWithGemini } from "@/lib/gemini-translate";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { VisaCheckInput, VisaCheckInputSchema } from "@/lib/visa-schema";
 import { getVerifiedFallback } from "@/lib/verified-fallbacks";
@@ -80,7 +81,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: DAILY_LIMIT_ERROR }, { status: 429 });
     }
 
-    const task = withTimeout(checkVisaWithOpenAI(input), 55_000).then((result) => {
+    const task = withTimeout(
+      checkVisaWithOpenAI(input).then(async (openAIResult) => {
+        try {
+          return await improveVisaSoraniWithGemini(openAIResult);
+        } catch (translationError) {
+          console.warn(
+            "Gemini Sorani translation unavailable; using OpenAI result:",
+            translationError instanceof Error ? translationError.message : "Unknown error",
+          );
+          return openAIResult;
+        }
+      }),
+      55_000,
+    ).then((result) => {
       setCachedVisaResult(key, result);
       return result;
     });

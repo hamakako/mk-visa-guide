@@ -10,7 +10,7 @@ import { VisaCheckInput, VisaResult, VisaResultSchema } from "@/lib/visa-schema"
 const CLIENT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 function clientCacheKey(input: VisaCheckInput) {
-  return `mk-visa-result:v2:${JSON.stringify(input)}`;
+  return `mk-visa-result:v3:${JSON.stringify(input)}`;
 }
 
 function readClientCache(input: VisaCheckInput) {
