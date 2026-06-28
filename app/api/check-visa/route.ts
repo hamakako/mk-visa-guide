@@ -4,11 +4,21 @@ import { checkVisaWithGemini } from "@/lib/gemini";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { VisaCheckInput, VisaCheckInputSchema } from "@/lib/visa-schema";
 import { getVerifiedFallback } from "@/lib/verified-fallbacks";
+import {
+  clearPendingVisaResult,
+  consumeDailyAiBudget,
+  getCachedVisaResult,
+  getPendingVisaResult,
+  setCachedVisaResult,
+  setPendingVisaResult,
+  visaCacheKey,
+} from "@/lib/free-quota";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const FRIENDLY_ERROR = "ببورە، لە ئێستادا ناتوانین پشکنینەکە تەواو بکەین. تکایە دووبارە هەوڵ بدەوە یان پەیوەندی بە ئێمە بکە.";
+const FREE_QUOTA_ERROR = "سنووری ڕۆژانەی خۆڕایی AI بۆ ئەمڕۆ تەواو بووە. ئەنجامە پاشەکەوتکراوەکان هێشتا بەردەستن؛ تکایە سبەی دووبارە هەوڵ بدەوە.";
 
 async function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout>;
@@ -24,28 +34,65 @@ async function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promis
 }
 
 export async function POST(request: NextRequest) {
-  const ip = getClientIp(request.headers);
-  const limit = checkRateLimit(ip);
-
-  if (!limit.allowed) {
-    return NextResponse.json(
-      { error: "ژمارەی پشکنینەکانت بۆ ئەم کاتژمێرە تەواو بووە. تکایە دواتر هەوڵ بدەوە." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(Math.ceil((limit.resetAt - Date.now()) / 1000)) },
-      },
-    );
-  }
-
   let input: VisaCheckInput | undefined;
+  let key = "";
+  let ownsPendingRequest = false;
   try {
     const body = await request.json();
     input = VisaCheckInputSchema.parse(body);
-    const result = await withTimeout(checkVisaWithGemini(input), 55_000);
+    key = visaCacheKey(input);
+
+    const cached = getCachedVisaResult(key);
+    if (cached) {
+      return NextResponse.json(cached, {
+        headers: { "Cache-Control": "private, max-age=300", "X-Visa-Cache": "HIT" },
+      });
+    }
+
+    // Official curated answers do not consume the small AI allowance.
+    const verified = getVerifiedFallback(input);
+    if (verified) {
+      setCachedVisaResult(key, verified);
+      return NextResponse.json(verified, {
+        headers: { "Cache-Control": "private, max-age=300", "X-Visa-Cache": "VERIFIED" },
+      });
+    }
+
+    const existingRequest = getPendingVisaResult(key);
+    if (existingRequest) {
+      const result = await existingRequest;
+      return NextResponse.json(result, {
+        headers: { "Cache-Control": "private, max-age=300", "X-Visa-Cache": "COALESCED" },
+      });
+    }
+
+    const ip = getClientIp(request.headers);
+    const limit = checkRateLimit(ip);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "ژمارەی پشکنینە نوێیەکانت بۆ ئەم کاتژمێرە تەواو بووە. ئەنجامە پاشەکەوتکراوەکان هێشتا بەردەستن." },
+        { status: 429, headers: { "Retry-After": String(Math.ceil((limit.resetAt - Date.now()) / 1000)) } },
+      );
+    }
+
+    const budget = consumeDailyAiBudget();
+    if (!budget.allowed) {
+      return NextResponse.json({ error: FREE_QUOTA_ERROR }, { status: 429 });
+    }
+
+    const task = withTimeout(checkVisaWithGemini(input), 55_000).then((result) => {
+      setCachedVisaResult(key, result);
+      return result;
+    });
+    setPendingVisaResult(key, task);
+    ownsPendingRequest = true;
+    const result = await task;
 
     return NextResponse.json(result, {
       headers: {
-        "Cache-Control": "no-store",
+        "Cache-Control": "private, max-age=300",
+        "X-Visa-Cache": "MISS",
+        "X-Free-AI-Remaining": String(budget.remaining),
         "X-RateLimit-Remaining": String(limit.remaining),
       },
     });
@@ -57,20 +104,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (input) {
-      const fallback = getVerifiedFallback(input);
-      if (fallback) {
-        return NextResponse.json(fallback, {
-          headers: {
-            "Cache-Control": "public, max-age=3600",
-            "X-Data-Source": "verified-official-fallback",
-            "X-RateLimit-Remaining": String(limit.remaining),
-          },
-        });
-      }
-    }
-
     console.error("Visa check failed:", error instanceof Error ? error.message : "Unknown error");
+    const message = error instanceof Error ? error.message : "";
+    if (/quota|RESOURCE_EXHAUSTED|429/i.test(message)) {
+      return NextResponse.json({ error: FREE_QUOTA_ERROR }, { status: 429 });
+    }
     return NextResponse.json({ error: FRIENDLY_ERROR }, { status: 503 });
+  } finally {
+    if (key && ownsPendingRequest) clearPendingVisaResult(key);
   }
 }

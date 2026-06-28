@@ -7,6 +7,36 @@ import { ResultCard } from "@/components/ResultCard";
 import { VisaSearchForm } from "@/components/VisaSearchForm";
 import { VisaCheckInput, VisaResult, VisaResultSchema } from "@/lib/visa-schema";
 
+const CLIENT_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
+function clientCacheKey(input: VisaCheckInput) {
+  return `mk-visa-result:v1:${JSON.stringify(input)}`;
+}
+
+function readClientCache(input: VisaCheckInput) {
+  try {
+    const raw = window.localStorage.getItem(clientCacheKey(input));
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as { savedAt?: number; result?: unknown };
+    if (!entry.savedAt || Date.now() - entry.savedAt > CLIENT_CACHE_TTL) {
+      window.localStorage.removeItem(clientCacheKey(input));
+      return null;
+    }
+    const parsed = VisaResultSchema.safeParse(entry.result);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeClientCache(input: VisaCheckInput, result: VisaResult) {
+  try {
+    window.localStorage.setItem(clientCacheKey(input), JSON.stringify({ savedAt: Date.now(), result }));
+  } catch {
+    // The result still works when private browsing or storage limits disable localStorage.
+  }
+}
+
 export function VisaGuide() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<VisaResult | null>(null);
@@ -20,6 +50,13 @@ export function VisaGuide() {
     window.setTimeout(() => statusRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
 
     try {
+      const localResult = readClientCache(input);
+      if (localResult) {
+        setResult(localResult);
+        window.setTimeout(() => document.getElementById("visa-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+        return;
+      }
+
       const response = await fetch("/api/check-visa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -31,7 +68,9 @@ export function VisaGuide() {
         throw new Error(message);
       }
 
-      setResult(VisaResultSchema.parse(payload));
+      const parsed = VisaResultSchema.parse(payload);
+      writeClientCache(input, parsed);
+      setResult(parsed);
       window.setTimeout(() => document.getElementById("visa-result")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "ببورە، پشکنینەکە سەرکەوتوو نەبوو.");
