@@ -9,13 +9,11 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
-      - key: GEMINI_API_KEY
+      - key: OPENAI_API_KEY
         sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash-lite
-      - key: GEMINI_FALLBACK_MODEL
-        value: gemini-2.5-flash-lite
-      - key: FREE_DAILY_AI_LIMIT
-        value: 18
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
+      - key: DAILY_AI_LIMIT
+        value: 100
       - key: VISA_CACHE_TTL_HOURS
         value: 168

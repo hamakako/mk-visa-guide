@@ -63,7 +63,7 @@ export function clearPendingVisaResult(key: string) {
 
 export function consumeDailyAiBudget() {
   const today = new Date().toISOString().slice(0, 10);
-  const dailyLimit = Math.max(1, Number(process.env.FREE_DAILY_AI_LIMIT || 18));
+  const dailyLimit = Math.max(1, Number(process.env.DAILY_AI_LIMIT || 100));
   let state = globalStore.__mkVisaBudget;
 
   if (!state || state.date !== today) {
@@ -75,4 +75,3 @@ export function consumeDailyAiBudget() {
   state.count += 1;
   return { allowed: true, remaining: dailyLimit - state.count };
 }
-

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { checkVisaWithGemini } from "@/lib/gemini";
+import { checkVisaWithOpenAI } from "@/lib/openai";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
 import { VisaCheckInput, VisaCheckInputSchema } from "@/lib/visa-schema";
 import { getVerifiedFallback } from "@/lib/verified-fallbacks";
@@ -18,12 +18,12 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const FRIENDLY_ERROR = "ببورە، لە ئێستادا ناتوانین پشکنینەکە تەواو بکەین. تکایە دووبارە هەوڵ بدەوە یان پەیوەندی بە ئێمە بکە.";
-const FREE_QUOTA_ERROR = "سنووری ڕۆژانەی خۆڕایی AI بۆ ئەمڕۆ تەواو بووە. ئەنجامە پاشەکەوتکراوەکان هێشتا بەردەستن؛ تکایە سبەی دووبارە هەوڵ بدەوە.";
+const DAILY_LIMIT_ERROR = "سنووری پاراستنی ڕۆژانەی پشکنینە نوێکان بۆ ئەمڕۆ تەواو بووە. ئەنجامە پاشەکەوتکراوەکان هێشتا بەردەستن؛ تکایە سبەی دووبارە هەوڵ بدەوە.";
 
 async function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout>;
   const deadline = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error("Gemini request timed out")), milliseconds);
+    timeout = setTimeout(() => reject(new Error("AI request timed out")), milliseconds);
   });
 
   try {
@@ -77,10 +77,10 @@ export async function POST(request: NextRequest) {
 
     const budget = consumeDailyAiBudget();
     if (!budget.allowed) {
-      return NextResponse.json({ error: FREE_QUOTA_ERROR }, { status: 429 });
+      return NextResponse.json({ error: DAILY_LIMIT_ERROR }, { status: 429 });
     }
 
-    const task = withTimeout(checkVisaWithGemini(input), 55_000).then((result) => {
+    const task = withTimeout(checkVisaWithOpenAI(input), 55_000).then((result) => {
       setCachedVisaResult(key, result);
       return result;
     });
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
       headers: {
         "Cache-Control": "private, max-age=300",
         "X-Visa-Cache": "MISS",
-        "X-Free-AI-Remaining": String(budget.remaining),
+        "X-Daily-AI-Remaining": String(budget.remaining),
         "X-RateLimit-Remaining": String(limit.remaining),
       },
     });
@@ -106,8 +106,8 @@ export async function POST(request: NextRequest) {
 
     console.error("Visa check failed:", error instanceof Error ? error.message : "Unknown error");
     const message = error instanceof Error ? error.message : "";
-    if (/quota|RESOURCE_EXHAUSTED|429/i.test(message)) {
-      return NextResponse.json({ error: FREE_QUOTA_ERROR }, { status: 429 });
+    if (/quota|insufficient_quota|429/i.test(message)) {
+      return NextResponse.json({ error: DAILY_LIMIT_ERROR }, { status: 429 });
     }
     return NextResponse.json({ error: FRIENDLY_ERROR }, { status: 503 });
   } finally {

@@ -10,14 +10,14 @@
 npm install
 ```
 
-## ٢. زیادکردنی Gemini API Key
+## ٢. زیادکردنی OpenAI API Key
 
 لە ناو فۆڵدەری پڕۆژەکە فایلێک بە ناوی `.env.local` دروست بکە. ناوەڕۆکەکەی بەم شێوەیە بێت:
 
 ```env
-GEMINI_API_KEY=کلیلە_تایبەتەکەت_لێرە_دابنێ
-GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
+OPENAI_API_KEY=کلیلە_تایبەتەکەت_لێرە_دابنێ
+OPENAI_MODEL=gpt-5.4-mini
+DAILY_AI_LIMIT=100
 ```
 
 **ئاگاداریی ئاسایش:** کلیلەکە هەرگیز لە کۆدی پێشەوە، GitHub یان خانەی `NEXT_PUBLIC_` دانەنێ. فایلی `.env.local` لەلایەن Git پشتگوێ دەخرێت.
@@ -51,9 +51,9 @@ npm start
 2. بچۆ بۆ [Render](https://render.com) و هەژمارێک دروست بکە.
 3. `New +` و پاشان `Blueprint` هەڵبژێرە.
 4. پەڕەی GitHubـەکەت پەیوەست بکە. Render فایلی `render.yaml` خۆکارانە دەخوێنێتەوە.
-5. لە بەشی Environment، `GEMINI_API_KEY` زیاد بکە و کلیلی خۆت دابنێ.
-6. `GEMINI_MODEL` لەسەر `gemini-2.5-flash-lite` بهێڵەوە یان مۆدێلێکی گونجاوی تر دابنێ.
-7. `GEMINI_FALLBACK_MODEL` مۆدێلی جێگرەوەیە کاتێک مۆدێلی سەرەکی سنووری داواکاریی پڕ دەکات.
+5. لە بەشی Environment، `OPENAI_API_KEY` زیاد بکە و کلیلی خۆت دابنێ.
+6. `OPENAI_MODEL` لەسەر `gpt-5.4-mini` بهێڵەوە.
+7. `DAILY_AI_LIMIT` سنووری پاراستنی خەرجیی ڕۆژانەیە.
 7. بڵاوکردنەوە دەست پێ بکە. Render بەستەرێکی `.onrender.com` دەداتێ.
 
 > ئەم پڕۆژەیە بە تەواوی لە GitHub Pages کار ناکات، چونکە API و کلیلی نهێنی پێویستی بە سێرڤەر هەیە. Render یان خزمەتگوزارییەکی هاوشێوە بەکاربهێنە.
@@ -64,16 +64,15 @@ npm start
 - ڕەنگە سەرەکییەکان لە `tailwind.config.ts` و `app/globals.css` دانراون.
 - فۆنتەکانی Noor لە `public/fonts` دانراون.
 
-## ٧. گۆڕینی مۆدێلی Gemini
+## ٧. گۆڕینی مۆدێلی OpenAI
 
-تەنها نرخی `GEMINI_MODEL` لە `.env.local` یان Environmentـی Render بگۆڕە:
+تەنها نرخی `OPENAI_MODEL` لە `.env.local` یان Environmentـی Render بگۆڕە:
 
 ```env
-GEMINI_MODEL=gemini-2.5-flash-lite
-GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
-مۆدێلێک هەڵبژێرە کە Google Search grounding و structured output پشتگیری بکات.
+مۆدێلێک هەڵبژێرە کە Web Search و structured output پشتگیری بکات.
 
 ## ٨. فەرمانەکان
 
@@ -84,10 +83,10 @@ GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
 
 ## تێبینیی تەکنیکی
 
-- کلیلی Gemini تەنها لە `app/api/check-visa` لە سێرڤەر بەکاردێت.
+- کلیلی OpenAI تەنها لە `app/api/check-visa` لە سێرڤەر بەکاردێت.
 - هەموو زانیارییەکانی بەکارهێنەر لە سێرڤەر بە Zod پشکنراون.
 - هەر IPـیەک دەتوانێت لە ماوەی کاتژمێرێکدا ١٠ پشکنین بکات.
 - ئەگەر سەرچاوەی پشتڕاستکراو نەبێت، ئەنجامەکە بە دڵنیایی پیشان نادرێت.
-- لە دۆخی خۆڕاییدا تەنها ١٨ داواکاریی نوێی AI لە ڕۆژێکدا بەکاردێت؛ دوو داواکاری بۆ پاراستن هێڵدراوەتەوە.
+- بە شێوەی بنەڕەتی سنووری پاراستنی خەرجی ١٠٠ داواکاریی نوێی AI لە ڕۆژێکدایە؛ بە `DAILY_AI_LIMIT` دەگۆڕدرێت.
 - ئەنجامی سەرکەوتوو ٧ ڕۆژ لە سێرڤەر و وێبگەڕی بەکارهێنەر پاشەکەوت دەکرێت، بۆیە دووبارەکردنەوەی هەمان پشکنین هیچ quotaـیەک بەکارناهێنێت.
 - پاشەکەوتی سێرڤەر لەسەر پلانی خۆڕایی Render دوای restart یان deploy لەناودەچێت، بەڵام پاشەکەوتی وێبگەڕی کڕیار دەمێنێتەوە.
