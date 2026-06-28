@@ -22,11 +22,6 @@ const SYSTEM_PROMPT = `
 9. تەنها JSONـی دروست و گونجاو لەگەڵ شێمای داواکراو بگەڕێنەوە؛ هیچ دەقێک لە دەرەوەی JSON مەنووسە.
 `;
 
-const RESEARCH_PROMPT = `
-تۆ توێژەرێکی وردبینی یاساکانی ڤیزایت بۆ ئاژانسی گەشتیاریی کوردی MK Business and Travel.
-بە Google Search زانیاریی ئێستای داواکارییەکە بپشکنە. سەرچاوە حکومی، فەرمانگەی کۆچبەری، باڵیۆزخانە، کۆنسوڵگەری و پۆرتاڵی فەرمییەکان لە پێشینەدا دابنێ. نەتەوەی پاسپۆرت، نیشتەجێبوون، ڤیزا و مۆڵەتە کارپێکراوەکان، مەبەست و ماوەی گەشت هەموویان لەبەرچاو بگرە. هیچ یاسا، تێچوو یان ماوەیەک داهێنان مەکە. ئەگەر ناکۆکی یان نادڵنیایی هەبوو، بە ڕوونی دیاری بکە. توێژینەوەکە بە کوردیی سۆرانی بنووسە.
-`;
-
 const purposeLabels: Record<VisaCheckInput["purpose"], string> = {
   tourism: "گەشتیاری",
   business: "کاروبار",
@@ -82,26 +77,72 @@ function isSafeHttpUrl(url: string) {
   }
 }
 
+function parseJsonResponse(text: string) {
+  const trimmed = text.trim();
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start < 0 || end < start) throw new Error("Gemini did not return a JSON object");
+  return JSON.parse(trimmed.slice(start, end + 1));
+}
+
+function isQuotaError(error: unknown) {
+  const value = error as { status?: number; message?: string };
+  return value?.status === 429 || /quota|RESOURCE_EXHAUSTED/i.test(value?.message || "");
+}
+
+function isTemporaryServiceError(error: unknown) {
+  const value = error as { status?: number; message?: string };
+  return [500, 502, 503, 504].includes(value?.status || 0) || /UNAVAILABLE|high demand|temporar/i.test(value?.message || "");
+}
+
+const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
 export async function checkVisaWithGemini(input: VisaCheckInput): Promise<VisaResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
 
   const ai = new GoogleGenAI({ apiKey });
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const fallbackModel = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash-lite";
+  const generate = async (request: Parameters<typeof ai.models.generateContent>[0]) => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        return await ai.models.generateContent(request);
+      } catch (error) {
+        lastError = error;
+        if (!isTemporaryServiceError(error) || attempt === 3) throw error;
+        await wait(800 * 2 ** attempt);
+      }
+    }
+    throw lastError;
+  };
 
-  // Pass 1: retrieve current facts with Google Search grounding.
-  const research = await ai.models.generateContent({
-    model,
-    contents: buildPrompt(input),
+  // One grounded call: search current rules and return JSON text for strict server validation.
+  let activeModel = model;
+  let response;
+  const requestFor = (selectedModel: string) => ({
+    model: selectedModel,
+    contents: `${buildPrompt(input)}\n\nشێمای JSON کە دەبێت بە تەواوی پەیڕەو بکرێت:\n${JSON.stringify(visaResultJsonSchema)}`,
     config: {
-      systemInstruction: RESEARCH_PROMPT,
+      systemInstruction: SYSTEM_PROMPT,
       tools: [{ googleSearch: {} }],
+      temperature: 0.1,
     },
   });
 
-  if (!research.text) throw new Error("Gemini returned empty grounded research");
+  try {
+    response = await generate(requestFor(activeModel));
+  } catch (error) {
+    if (!isQuotaError(error) || fallbackModel === activeModel) throw error;
+    activeModel = fallbackModel;
+    response = await generate(requestFor(activeModel));
+  }
 
-  const chunks = (research.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []) as GroundingChunk[];
+  if (!response.text) throw new Error("Gemini returned an empty grounded response");
+  const parsed = VisaResultSchema.parse(parseJsonResponse(response.text));
+
+  const chunks = (response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []) as GroundingChunk[];
   const groundedSources = chunks
     .filter((chunk): chunk is { web: { title?: string; uri: string } } => Boolean(chunk.web?.uri && isSafeHttpUrl(chunk.web.uri)))
     .map((chunk) => ({
@@ -111,21 +152,6 @@ export async function checkVisaWithGemini(input: VisaCheckInput): Promise<VisaRe
     }))
     .filter((source, index, all) => all.findIndex((item) => item.url === source.url) === index)
     .slice(0, 12);
-
-  // Pass 2: convert only the grounded research into the strict public response schema.
-  const structured = await ai.models.generateContent({
-    model,
-    contents: `${buildPrompt(input)}\n\nتوێژینەوەی پشتبەستوو بە Google Search:\n${research.text}\n\nسەرچاوە پشتڕاستکراوەکان:\n${groundedSources.map((source) => `- ${source.title}: ${source.url}`).join("\n") || "هیچ سەرچاوەیەک نەدۆزرایەوە"}`,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      responseMimeType: "application/json",
-      responseJsonSchema: visaResultJsonSchema,
-      temperature: 0.1,
-    },
-  });
-
-  if (!structured.text) throw new Error("Gemini returned an empty structured response");
-  const parsed = VisaResultSchema.parse(JSON.parse(structured.text));
 
   // A confident visa answer without a verifiable URL is not safe to present as settled.
   if (groundedSources.length === 0) {

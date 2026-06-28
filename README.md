@@ -16,7 +16,8 @@ npm install
 
 ```env
 GEMINI_API_KEY=کلیلە_تایبەتەکەت_لێرە_دابنێ
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
 ```
 
 **ئاگاداریی ئاسایش:** کلیلەکە هەرگیز لە کۆدی پێشەوە، GitHub یان خانەی `NEXT_PUBLIC_` دانەنێ. فایلی `.env.local` لەلایەن Git پشتگوێ دەخرێت.
@@ -51,7 +52,8 @@ npm start
 3. `New +` و پاشان `Blueprint` هەڵبژێرە.
 4. پەڕەی GitHubـەکەت پەیوەست بکە. Render فایلی `render.yaml` خۆکارانە دەخوێنێتەوە.
 5. لە بەشی Environment، `GEMINI_API_KEY` زیاد بکە و کلیلی خۆت دابنێ.
-6. `GEMINI_MODEL` لەسەر `gemini-2.5-flash` بهێڵەوە یان مۆدێلێکی گونجاوی تر دابنێ.
+6. `GEMINI_MODEL` لەسەر `gemini-2.5-flash-lite` بهێڵەوە یان مۆدێلێکی گونجاوی تر دابنێ.
+7. `GEMINI_FALLBACK_MODEL` مۆدێلی جێگرەوەیە کاتێک مۆدێلی سەرەکی سنووری داواکاریی پڕ دەکات.
 7. بڵاوکردنەوە دەست پێ بکە. Render بەستەرێکی `.onrender.com` دەداتێ.
 
 > ئەم پڕۆژەیە بە تەواوی لە GitHub Pages کار ناکات، چونکە API و کلیلی نهێنی پێویستی بە سێرڤەر هەیە. Render یان خزمەتگوزارییەکی هاوشێوە بەکاربهێنە.
@@ -67,7 +69,8 @@ npm start
 تەنها نرخی `GEMINI_MODEL` لە `.env.local` یان Environmentـی Render بگۆڕە:
 
 ```env
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_FALLBACK_MODEL=gemini-2.5-flash-lite
 ```
 
 مۆدێلێک هەڵبژێرە کە Google Search grounding و structured output پشتگیری بکات.

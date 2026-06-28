@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { checkVisaWithGemini } from "@/lib/gemini";
 import { getClientIp, checkRateLimit } from "@/lib/rate-limit";
-import { VisaCheckInputSchema } from "@/lib/visa-schema";
+import { VisaCheckInput, VisaCheckInputSchema } from "@/lib/visa-schema";
+import { getVerifiedFallback } from "@/lib/verified-fallbacks";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -36,9 +37,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let input: VisaCheckInput | undefined;
   try {
     const body = await request.json();
-    const input = VisaCheckInputSchema.parse(body);
+    input = VisaCheckInputSchema.parse(body);
     const result = await withTimeout(checkVisaWithGemini(input), 55_000);
 
     return NextResponse.json(result, {
@@ -53,6 +55,19 @@ export async function POST(request: NextRequest) {
         { error: "هەندێک زانیاری دروست نییە. تکایە خانەکان دووبارە بپشکنەوە." },
         { status: 400 },
       );
+    }
+
+    if (input) {
+      const fallback = getVerifiedFallback(input);
+      if (fallback) {
+        return NextResponse.json(fallback, {
+          headers: {
+            "Cache-Control": "public, max-age=3600",
+            "X-Data-Source": "verified-official-fallback",
+            "X-RateLimit-Remaining": String(limit.remaining),
+          },
+        });
+      }
     }
 
     console.error("Visa check failed:", error instanceof Error ? error.message : "Unknown error");
